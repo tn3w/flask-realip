@@ -1,6 +1,6 @@
 [project]
 name = "flask-realip"
-version = "1.0.1"
+version = "1.0.2"
 description = "Flask extension to get real IP addresses behind proxies"
 readme = "README.md"
 authors = [
