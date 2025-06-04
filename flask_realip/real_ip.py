@@ -15,9 +15,9 @@ class RealIP:
 
     def __init__(
         self,
-        app=None,
-        trusted_proxies: List[str] = None,
-        forwarded_headers: List[str] = None,
+        app: Optional[Flask] = None,
+        trusted_proxies: Optional[List[str]] = None,
+        forwarded_headers: Optional[List[str]] = None,
         proxied_only: bool = True,
     ):
         self.app = app
@@ -38,21 +38,21 @@ class RealIP:
             self.init_app(app)
 
     @property
-    def trusted_proxies(self):
+    def trusted_proxies(self) -> List[str]:
         """Get the trusted proxies from the Flask app's config."""
         return current_app.config["REAL_IP_TRUSTED_PROXIES"]
 
     @property
-    def forwarded_headers(self):
+    def forwarded_headers(self) -> List[str]:
         """Get the forwarded headers from the Flask app's config."""
         return current_app.config["REAL_IP_FORWARDED_HEADERS"]
 
     @property
-    def proxied_only(self):
+    def proxied_only(self) -> bool:
         """Get the proxied only flag from the Flask app's config."""
         return current_app.config["REAL_IP_PROXIED_ONLY"]
 
-    def init_app(self, app: Flask):
+    def init_app(self, app: Flask) -> None:
         """Configure the specified Flask app to use real IP middleware."""
         app.config.setdefault(
             "REAL_IP_TRUSTED_PROXIES", self.defaults["trusted_proxies"]
@@ -61,8 +61,6 @@ class RealIP:
             "REAL_IP_FORWARDED_HEADERS", self.defaults["forwarded_headers"]
         )
         app.config.setdefault("REAL_IP_PROXIED_ONLY", self.defaults["proxied_only"])
-
-        app.real_ip_original_request_class = app.request_class
 
         parent = self
 
@@ -99,7 +97,7 @@ class RealIP:
                 return parent._format_ip(remote_ip)
 
             @remote_addr.setter
-            def remote_addr(self, value):
+            def remote_addr(self, _value: str) -> None:
                 """Setter for remote_addr to handle Werkzeug's initialization."""
 
         app.request_class = RealIPRequest
