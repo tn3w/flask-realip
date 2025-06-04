@@ -22,7 +22,7 @@ pip install flask-realip
 Or from the source code:
 
 ```bash
-git clone https://github.com/username/flask-realip.git
+git clone https://github.com/tn3w/flask-realip.git
 cd flask-realip
 pip install -e .
 ```
