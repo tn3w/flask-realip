@@ -19,6 +19,7 @@ class RealIP:
         trusted_proxies: Optional[List[str]] = None,
         forwarded_headers: Optional[List[str]] = None,
         proxied_only: bool = True,
+        prefer_ipv4: bool = True,
     ):
         self.app = app
         self.defaults = {
@@ -32,6 +33,7 @@ class RealIP:
                 "HTTP_FORWARDED",
             ],
             "proxied_only": proxied_only,
+            "prefer_ipv4": prefer_ipv4,
         }
 
         if app is not None:
@@ -52,6 +54,11 @@ class RealIP:
         """Get the proxied only flag from the Flask app's config."""
         return current_app.config["REAL_IP_PROXIED_ONLY"]
 
+    @property
+    def prefer_ipv4(self) -> bool:
+        """Get the prefer IPv4 flag from the Flask app's config."""
+        return current_app.config["REAL_IP_PREFER_IPV4"]
+
     def init_app(self, app: Flask) -> None:
         """Configure the specified Flask app to use real IP middleware."""
         app.config.setdefault(
@@ -61,6 +68,7 @@ class RealIP:
             "REAL_IP_FORWARDED_HEADERS", self.defaults["forwarded_headers"]
         )
         app.config.setdefault("REAL_IP_PROXIED_ONLY", self.defaults["proxied_only"])
+        app.config.setdefault("REAL_IP_PREFER_IPV4", self.defaults["prefer_ipv4"])
 
         parent = self
 
@@ -70,7 +78,7 @@ class RealIP:
             """
 
             @property
-            def remote_addr(self):
+            def remote_addr(self) -> Optional[str]:
                 """
                 Get the real remote address, handling proxies and IPv6 conversions.
 
@@ -82,19 +90,41 @@ class RealIP:
                 if parent.proxied_only and remote_ip not in parent.trusted_proxies:
                     return remote_ip
 
+                all_ips: List[str] = []
                 for header in parent.forwarded_headers:
-                    forwarded_ip = self.environ.get(header)
-                    if forwarded_ip:
-                        if "," in forwarded_ip:
-                            forwarded_ip = forwarded_ip.split(",")[0].strip()
+                    forwarded_ip_str = self.environ.get(header)
+                    if forwarded_ip_str:
+                        extracted_ips = parent._extract_ips(forwarded_ip_str)
+                        if extracted_ips:
+                            all_ips.extend(extracted_ips)
+                            break
 
-                        remote_ip = parent._clean_ip(forwarded_ip)
-                        break
+                if not all_ips:
+                    return remote_ip
 
-                if not remote_ip:
-                    return None
+                valid_ipv4s: List[str] = []
+                valid_ipv6s: List[str] = []
 
-                return parent._format_ip(remote_ip)
+                for ip in all_ips:
+                    formatted_ip = parent._format_ip(ip)
+                    if formatted_ip:
+                        try:
+                            ip_obj = IPAddress(formatted_ip)
+                            if ip_obj.version == 4:
+                                valid_ipv4s.append(formatted_ip)
+                            else:
+                                valid_ipv6s.append(formatted_ip)
+                        except (AddrFormatError, ValueError):
+                            continue
+
+                if parent.prefer_ipv4 and valid_ipv4s:
+                    return valid_ipv4s[0]
+                if valid_ipv4s:
+                    return valid_ipv4s[0]
+                if valid_ipv6s:
+                    return valid_ipv6s[0]
+
+                return None
 
             @remote_addr.setter
             def remote_addr(self, _value: str) -> None:
@@ -102,20 +132,37 @@ class RealIP:
 
         app.request_class = RealIPRequest
 
-    def _clean_ip(self, ip_str: str) -> str:
+    def _extract_ips(self, ip_header: str) -> List[str]:
         """
-        Clean up an IP string, removing brackets, port numbers, etc.
-        """
-        if ip_str.startswith("["):
-            match = re.match(r"^\[([^\]]+)\](?::\d+)?$", ip_str)
-            if match:
-                return match.group(1)
-        else:
-            colon_count = ip_str.count(":")
-            if colon_count == 1 and "::" not in ip_str:
-                return ip_str.split(":")[0]
+        Extract and clean multiple IP addresses from a header string.
 
-        return ip_str
+        Args:
+            ip_header: IP address string, potentially containing multiple IPs
+
+        Returns:
+            List[str]: List of cleaned IP addresses
+        """
+        if not ip_header:
+            return []
+
+        ips = [ip.strip() for ip in ip_header.split(",")]
+        cleaned_ips: List[str] = []
+
+        for ip_str in ips:
+            if ip_str.startswith("["):
+                match = re.match(r"^\[([^\]]+)\](?::\d+)?$", ip_str)
+                if match:
+                    cleaned_ips.append(match.group(1))
+                else:
+                    cleaned_ips.append(ip_str)
+            else:
+                colon_count = ip_str.count(":")
+                if colon_count == 1 and "::" not in ip_str:
+                    cleaned_ips.append(ip_str.split(":")[0])
+                else:
+                    cleaned_ips.append(ip_str)
+
+        return cleaned_ips
 
     def _format_ip(self, ip_str: str) -> Optional[str]:
         """
