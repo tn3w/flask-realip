@@ -70,6 +70,8 @@ class RealIP:
         app.config.setdefault("REAL_IP_PROXIED_ONLY", self.defaults["proxied_only"])
         app.config.setdefault("REAL_IP_PREFER_IPV4", self.defaults["prefer_ipv4"])
 
+        app.extensions["realip"] = self
+
         parent = self
 
         class RealIPRequest(app.request_class):
